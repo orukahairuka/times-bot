@@ -145,6 +145,16 @@ async function createPersonalTimes(guild, member) {
                     PermissionsBitField.Flags.ReadMessageHistory,
                 ],
             },
+            // Committeeロールに閲覧権限を追加
+            ...guild.roles.cache
+                .filter(role => role.name.toLowerCase().includes('committee'))
+                .map(role => ({
+                    id: role.id,
+                    allow: [
+                        PermissionsBitField.Flags.ViewChannel,
+                        PermissionsBitField.Flags.ReadMessageHistory,
+                    ],
+                })),
         ] :
         undefined;
 
@@ -227,10 +237,18 @@ client.on('messageReactionAdd', async(reaction, user) => {
 /* ===== 管理者用メッセージコマンド ===== */
 
 function isAdminish(member) {
-    return (
-        member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-        member.permissions.has(PermissionsBitField.Flags.ManageGuild)
+    // 管理者権限チェック
+    if (member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+        member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+        return true;
+    }
+
+    // Committeeロールチェック
+    const hasCommitteeRole = member.roles.cache.some(role =>
+        role.name.toLowerCase().includes('committee')
     );
+
+    return hasCommitteeRole;
 }
 
 client.on('messageCreate', async(msg) => {
@@ -241,8 +259,13 @@ client.on('messageCreate', async(msg) => {
 
         const member = await msg.guild.members.fetch(msg.author.id);
         if (!isAdminish(member)) {
-            return msg.reply('このコマンドは管理者のみ使用できます。');
+            return msg.reply('このコマンドは管理者またはCommitteeロールのみ使用できます。');
         }
+
+        // コマンドメッセージを削除（権限があれば）
+        try {
+            await msg.delete();
+        } catch {}
 
         const [cmd, ...rest] = msg.content.slice(PREFIX.length).trim().split(/\s+/);
         const lower = cmd?.toLowerCase();
@@ -304,6 +327,67 @@ client.on('messageCreate', async(msg) => {
             return msg.reply('トリガーをクリアしました。');
         }
 
+        // !make-times (自分用 or メンション指定)
+        if (lower === 'make-times') {
+            const mentions = msg.mentions.users;
+
+            if (mentions.size === 0) {
+                // 自分用times作成
+                try {
+                    const channel = await createPersonalTimes(msg.guild, member);
+                    return msg.reply(`✅ あなたの times → ${channel}`);
+                } catch (error) {
+                    console.error('自分用times作成エラー:', error);
+                    return msg.reply('❌ times作成に失敗しました。');
+                }
+            } else {
+                // メンション指定で複数作成
+                const results = [];
+                for (const [userId, user] of mentions) {
+                    try {
+                        const targetMember = await msg.guild.members.fetch(userId);
+                        const channel = await createPersonalTimes(msg.guild, targetMember);
+                        results.push(`✅ ${user.tag} → ${channel}`);
+                    } catch (error) {
+                        console.error(`${user.tag}のtimes作成エラー:`, error);
+                        results.push(`❌ ${user.tag} の作成に失敗`);
+                    }
+                }
+                return msg.reply(results.join('\n'));
+            }
+        }
+
+        // !recreate-times @user1 @user2 ...
+        if (lower === 'recreate-times') {
+            const mentions = msg.mentions.users;
+
+            if (mentions.size === 0) {
+                return msg.reply('使い方: `!recreate-times @ユーザー1 @ユーザー2 ...`');
+            }
+
+            const results = [];
+            for (const [userId, user] of mentions) {
+                try {
+                    const targetMember = await msg.guild.members.fetch(userId);
+                    const categoryName = resolveCategoryNameFor(targetMember);
+
+                    // 既存チャンネルを削除
+                    const existing = findExistingTimesChannel(msg.guild, targetMember, categoryName);
+                    if (existing) {
+                        await existing.delete(`times再作成: ${targetMember.user.tag} (管理者コマンド)`);
+                    }
+
+                    // 新規作成
+                    const channel = await createPersonalTimes(msg.guild, targetMember);
+                    results.push(`🔄 ${user.tag} → ${channel} (再作成)`);
+                } catch (error) {
+                    console.error(`${user.tag}のtimes再作成エラー:`, error);
+                    results.push(`❌ ${user.tag} の再作成に失敗`);
+                }
+            }
+            return msg.reply(results.join('\n'));
+        }
+
         // !status
         if (lower === 'status') {
             const lines = [
@@ -315,7 +399,7 @@ client.on('messageCreate', async(msg) => {
             return msg.reply(lines.join('\n'));
         }
 
-        return msg.reply('未知のコマンドです。利用可能: `!add-role`, `!remove-role`, `!list-roles`, `!set-trigger`, `!clear-trigger`, `!status`');
+        return msg.reply('未知のコマンドです。利用可能: `!add-role`, `!remove-role`, `!list-roles`, `!set-trigger`, `!clear-trigger`, `!make-times`, `!recreate-times`, `!status`');
     } catch (e) {
         console.error('コマンド処理エラー:', e);
     }
