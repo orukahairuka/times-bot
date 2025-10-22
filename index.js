@@ -1,4 +1,4 @@
-// ロール→カテゴリ振り分け + リアクション発火 + 参加/退出 + 管理者用コマンド + 設定保存
+// ロール→カテゴリ振り分け + リアクション発火 + 最小限コマンド
 import 'dotenv/config';
 import fs from 'node:fs/promises';
 import {
@@ -10,7 +10,7 @@ import {
 } from 'discord.js';
 
 /** ====== ここを必要に応じて ====== */
-const PREFIX = '!'; // 管理コマンドの接頭辞
+const PREFIX = '!'; // コマンドの接頭辞
 const DEFAULT_CATEGORY_NAME = 'times'; // デフォルトカテゴリ
 const CHANNEL_PREFIX = 'times-'; // 個人チャンネル名の接頭辞
 const PRIVATE_TO_MEMBER = true; // 個人チャンネルを本人だけ見える設定にする
@@ -53,9 +53,8 @@ async function saveConfig() {
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers, // 参加/退出
-        GatewayIntentBits.GuildMessages, // メッセージ受信（管理コマンド）
-        GatewayIntentBits.MessageContent, // メッセージ本文（管理コマンドに必要）
+        GatewayIntentBits.GuildMessages, // コマンド受信
+        GatewayIntentBits.MessageContent, // メッセージ本文
         GatewayIntentBits.GuildMessageReactions, // リアクション発火
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User],
@@ -174,39 +173,7 @@ async function createPersonalTimes(guild, member) {
     return channel;
 }
 
-/* ===== イベント: 参加 / 退出 / リアクション ===== */
-
-client.on('guildMemberAdd', async(member) => {
-    try {
-        await createPersonalTimes(member.guild, member);
-    } catch (e) {
-        console.error('参加時times作成失敗:', e);
-    }
-});
-
-client.on('guildMemberRemove', async(member) => {
-    try {
-        const guild = member.guild;
-        if (!guild) return;
-
-        const candidateCategories = [
-            ...new Set([
-                ...Object.values(config.roleToCategory),
-                DEFAULT_CATEGORY_NAME,
-            ]),
-        ];
-
-        for (const cat of candidateCategories) {
-            const ch = findExistingTimesChannel(guild, member, cat);
-            if (ch) {
-                await ch.delete(`退出に伴うtimes削除: ${member.user?.tag ?? member.id}`);
-                break;
-            }
-        }
-    } catch (e) {
-        console.error('退出時times削除失敗:', e);
-    }
-});
+/* ===== イベント: リアクション ===== */
 
 client.on('messageReactionAdd', async(reaction, user) => {
     try {
@@ -234,7 +201,7 @@ client.on('messageReactionAdd', async(reaction, user) => {
     }
 });
 
-/* ===== 管理者用メッセージコマンド ===== */
+/* ===== コマンド ===== */
 
 function isAdminish(member) {
     // 管理者権限チェック
@@ -270,63 +237,6 @@ client.on('messageCreate', async(msg) => {
         const [cmd, ...rest] = msg.content.slice(PREFIX.length).trim().split(/\s+/);
         const lower = cmd?.toLowerCase();
 
-        // !add-role @role 27-times
-        if (lower === 'add-role') {
-            // 1番目: ロール指定（@メンション or ID）、2番目: カテゴリ名
-            const roleMentionOrId = rest.shift();
-            const category = rest.join(' ').trim();
-            if (!roleMentionOrId || !category) {
-                return msg.reply('使い方: `!add-role @ロール 27-times`');
-            }
-            const roleId = roleMentionOrId.replace(/[<@&>]/g, '');
-            const role = msg.guild.roles.cache.get(roleId);
-            if (!role) return msg.reply('そのロールが見つかりませんでした。');
-
-            config.roleToCategory[roleId] = category;
-            await saveConfig();
-            return msg.reply(`マッピング追加: <@&${roleId}> → \`${category}\``);
-        }
-
-        // !remove-role @role
-        if (lower === 'remove-role') {
-            const roleMentionOrId = rest.shift();
-            if (!roleMentionOrId) return msg.reply('使い方: `!remove-role @ロール`');
-            const roleId = roleMentionOrId.replace(/[<@&>]/g, '');
-            if (config.roleToCategory[roleId]) {
-                delete config.roleToCategory[roleId];
-                await saveConfig();
-                return msg.reply(`マッピング削除: <@&${roleId}>`);
-            }
-            return msg.reply('そのロールのマッピングはありません。');
-        }
-
-        // !list-roles
-        if (lower === 'list-roles') {
-            const entries = Object.entries(config.roleToCategory);
-            if (entries.length === 0) return msg.reply('マッピングは空です。');
-            const lines = entries.map(([rid, cat]) => `• <@&${rid}> → \`${cat}\``);
-            return msg.reply(`現在のマッピング:\n${lines.join('\n')}`);
-        }
-
-        // !set-trigger メッセージID 絵文字
-        if (lower === 'set-trigger') {
-            const messageId = rest[0];
-            const emoji = rest[1] || '✅';
-            if (!messageId) return msg.reply('使い方: `!set-trigger メッセージID ✅`');
-            config.trigger.messageId = messageId;
-            config.trigger.emoji = emoji;
-            await saveConfig();
-            return msg.reply(`トリガー設定: messageId=${messageId}, emoji=${emoji}`);
-        }
-
-        // !clear-trigger
-        if (lower === 'clear-trigger') {
-            config.trigger.messageId = '';
-            config.trigger.channelId = '';
-            await saveConfig();
-            return msg.reply('トリガーをクリアしました。');
-        }
-
         // !make-times (自分用 or メンション指定)
         if (lower === 'make-times') {
             const mentions = msg.mentions.users;
@@ -357,35 +267,15 @@ client.on('messageCreate', async(msg) => {
             }
         }
 
-        // !recreate-times @user1 @user2 ...
-        if (lower === 'recreate-times') {
-            const mentions = msg.mentions.users;
-
-            if (mentions.size === 0) {
-                return msg.reply('使い方: `!recreate-times @ユーザー1 @ユーザー2 ...`');
-            }
-
-            const results = [];
-            for (const [userId, user] of mentions) {
-                try {
-                    const targetMember = await msg.guild.members.fetch(userId);
-                    const categoryName = resolveCategoryNameFor(targetMember);
-
-                    // 既存チャンネルを削除
-                    const existing = findExistingTimesChannel(msg.guild, targetMember, categoryName);
-                    if (existing) {
-                        await existing.delete(`times再作成: ${targetMember.user.tag} (管理者コマンド)`);
-                    }
-
-                    // 新規作成
-                    const channel = await createPersonalTimes(msg.guild, targetMember);
-                    results.push(`🔄 ${user.tag} → ${channel} (再作成)`);
-                } catch (error) {
-                    console.error(`${user.tag}のtimes再作成エラー:`, error);
-                    results.push(`❌ ${user.tag} の再作成に失敗`);
-                }
-            }
-            return msg.reply(results.join('\n'));
+        // !set-trigger メッセージID 絵文字
+        if (lower === 'set-trigger') {
+            const messageId = rest[0];
+            const emoji = rest[1] || '✅';
+            if (!messageId) return msg.reply('使い方: `!set-trigger メッセージID ✅`');
+            config.trigger.messageId = messageId;
+            config.trigger.emoji = emoji;
+            await saveConfig();
+            return msg.reply(`トリガー設定: messageId=${messageId}, emoji=${emoji}`);
         }
 
         // !status
@@ -394,12 +284,12 @@ client.on('messageCreate', async(msg) => {
                 `Default Category: \`${DEFAULT_CATEGORY_NAME}\``,
                 `Private to member: \`${String(PRIVATE_TO_MEMBER)}\``,
                 `Trigger: messageId=\`${config.trigger.messageId || '-'}\`, channelId=\`${config.trigger.channelId || '-'}\`, emoji=\`${config.trigger.emoji || '-'}\``,
-                `Mappings: ${Object.keys(config.roleToCategory).length} 件（!list-roles で表示）`,
+                `Mappings: ${Object.keys(config.roleToCategory).length} 件`,
             ];
             return msg.reply(lines.join('\n'));
         }
 
-        return msg.reply('未知のコマンドです。利用可能: `!add-role`, `!remove-role`, `!list-roles`, `!set-trigger`, `!clear-trigger`, `!make-times`, `!recreate-times`, `!status`');
+        return msg.reply('未知のコマンドです。利用可能: `!make-times`, `!set-trigger`, `!status`');
     } catch (e) {
         console.error('コマンド処理エラー:', e);
     }
