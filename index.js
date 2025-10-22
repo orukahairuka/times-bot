@@ -133,13 +133,28 @@ client.on('messageReactionAdd', async(reaction, user) => {
         const guild = message.guild;
         if (!guild) return;
 
+        console.log('✅ reaction fired from:', user.username);
+
         const { messageId, channelId, emoji } = config.trigger;
-        if (emoji && reaction.emoji.name !== emoji) return;
-        if (messageId && message.id !== messageId) return;
-        if (channelId && message.channel.id !== channelId) return;
+        if (emoji && reaction.emoji.name !== emoji) {
+            console.log('❌ emoji mismatch:', reaction.emoji.name);
+            return;
+        }
+        if (messageId && message.id !== messageId) {
+            console.log('❌ messageId mismatch');
+            return;
+        }
+        if (channelId && message.channel.id !== channelId) {
+            console.log('❌ channelId mismatch');
+            return;
+        }
 
         const member = await guild.members.fetch(user.id);
+        console.log('🎯 creating times for:', member.user.tag);
+
         const channel = await createPersonalTimes(guild, member);
+        console.log('✅ created channel:', channel.name);
+
         await message.channel.send(
             `<@${user.id}> あなたの times を作成しました → ${channel}`
         );
