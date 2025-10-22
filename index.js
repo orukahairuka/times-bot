@@ -170,7 +170,12 @@ client.on('messageCreate', async(msg) => {
     try {
         if (!msg.guild) return;
         if (msg.author.bot) return;
+
+        console.log('📨 message received:', msg.content);
+
         if (!msg.content.startsWith(PREFIX)) return;
+
+        console.log('🔧 command detected:', msg.content);
 
         const member = await msg.guild.members.fetch(msg.author.id);
 
@@ -180,9 +185,14 @@ client.on('messageCreate', async(msg) => {
             role.name.toLowerCase().includes('committee')
         );
 
+        console.log('👤 user permissions:', { isAdmin, hasCommitteeRole });
+
         if (!isAdmin && !hasCommitteeRole) {
+            console.log('❌ permission denied');
             return msg.reply('このコマンドは管理者またはCommitteeロール保持者のみ使用できます。');
         }
+
+        console.log('✅ permission ok, processing command');
 
         const [cmd, ...rest] = msg.content.slice(PREFIX.length).trim().split(/\s+/);
         const lower = cmd?.toLowerCase();
