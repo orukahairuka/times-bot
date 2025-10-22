@@ -1,8 +1,9 @@
 {
-  "roleToCategory": {},
   "trigger": {
-    "messageId": "1418220208384114809",
+    "messageId": "1430574796814680105",
     "channelId": "",
-    "emoji": "🐈"
-  }
+    "emoji": "💐"
+  },
+  "welcomeMessage": "ようこそ {user} さん！ここがあなたの **times** です。\n日報・メモ・進捗など自由にどうぞ。",
+  "roleToCategory": {}
 }
