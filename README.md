@@ -59,7 +59,7 @@ gcloud functions deploy discordBot \
   --entry-point=discordBot \
   --trigger-http \
   --allow-unauthenticated \
-  --set-env-vars DISCORD_PUBLIC_KEY=your_public_key_here
+  --set-env-vars DISCORD_PUBLIC_KEY=your_public_key_here,DISCORD_TOKEN=your_bot_token_here
 ```
 
 **環境変数の設定方法（推奨）**:
@@ -74,7 +74,7 @@ gcloud functions deploy discordBot \
   --entry-point=discordBot \
   --trigger-http \
   --allow-unauthenticated \
-  --set-secrets 'DISCORD_PUBLIC_KEY=discord-public-key:latest'
+  --set-secrets 'DISCORD_PUBLIC_KEY=discord-public-key:latest,DISCORD_TOKEN=discord-token:latest'
 ```
 
 ### 5. Interactions Endpoint URL の設定
@@ -109,13 +109,15 @@ npm run register
 
 ## 🎮 使い方
 
-Discord サーバーで `/make-times` と入力すると：
+Discord サーバーで `/make-times` と入力すると、自分専用の times チャンネルが作成されます：
 
 ```
-✅ timesコマンドを受信しました！
+✅ チャンネル #times-username を作成しました！
 ```
 
-と返信されます。
+作成されたチャンネルは以下の権限設定になります：
+- 自分のみがメッセージを送信可能
+- 他のメンバーは閲覧のみ可能
 
 ## 📝 ファイル構成
 
