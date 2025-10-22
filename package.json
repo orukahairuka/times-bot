@@ -8,12 +8,13 @@
     "node": "20"
   },
   "scripts": {
-    "register": "node register-commands.js",
-    "start": "node index.js"
+    "start": "node index.js",
+    "register": "node register-commands.js"
   },
   "dependencies": {
     "express": "^4.19.2",
     "discord-interactions": "^4.0.0",
-    "dotenv": "^17.2.2"
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2"
   }
 }

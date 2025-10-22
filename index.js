@@ -1,77 +1,124 @@
-// Cloud Functions (Gen 2) で動作する Discord Slash Command Bot
-// Express + discord-interactions を使用
-
 import 'dotenv/config';
 import express from 'express';
+import fetch from 'node-fetch';
 import {
   InteractionType,
   InteractionResponseType,
   verifyKeyMiddleware,
 } from 'discord-interactions';
 
-// === Express アプリ作成 ===
 const app = express();
 
-// ✅ express.json() は不要！
-// verifyKeyMiddleware が Discord の署名検証と raw body の解析を担当するため。
+/**
+ * ✅ Cloud Run (Gen2) 用ヘルスチェック
+ * このルートが即時 200 OK を返さないとデプロイ失敗します。
+ */
+app.get('/', (_, res) => {
+  res.status(200).send('✅ Discord Times Bot is running on Cloud Functions (Gen2)!');
+});
 
-// === 環境変数の検証 ===
+// === 環境変数の確認 ===
 const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 
-if (!DISCORD_PUBLIC_KEY) {
-  console.error('❌ DISCORD_PUBLIC_KEY が設定されていません');
+if (!DISCORD_PUBLIC_KEY || !DISCORD_TOKEN) {
+  console.error('❌ 必要な環境変数が設定されていません');
   process.exit(1);
 }
 
-// === Discord からのリクエスト受付 ===
+// === Discord からのリクエストを受け取る ===
 app.post('/', verifyKeyMiddleware(DISCORD_PUBLIC_KEY), async (req, res) => {
   const interaction = req.body;
-  console.log('📨 Interaction received:', JSON.stringify(interaction, null, 2));
 
-  // 🔹 Discord からの PING（接続確認）
+  // --- PING ---
   if (interaction.type === InteractionType.PING) {
-    console.log('🏓 PING received');
-    return res.send({
-      type: InteractionResponseType.PONG,
-    });
+    return res.send({ type: InteractionResponseType.PONG });
   }
 
-  // 🔹 Slash Command の処理
+  // --- Slash Command 処理 ---
   if (interaction.type === InteractionType.APPLICATION_COMMAND) {
     const { name } = interaction.data;
-    console.log('🔧 Command received:', name);
 
     // ✅ /make-times コマンド
     if (name === 'make-times') {
-      console.log('✅ make-times command executed');
-      return res.send({
-        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-        data: {
-          content: '✅ timesコマンドを受信しました！',
-        },
-      });
+      const guildId = interaction.guild_id;
+      const username = interaction.member.user.username;
+      const userId = interaction.member.user.id;
+      const channelName = `times-${username.toLowerCase()}`;
+
+      try {
+        // Discord APIでチャンネル作成
+        const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bot ${DISCORD_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: channelName,
+            type: 0, // テキストチャンネル
+            topic: `${username}'s times channel`,
+            permission_overwrites: [
+              {
+                id: guildId,
+                type: 0, // everyone
+                deny: '1024', // メッセージ送信を禁止
+              },
+              {
+                id: userId,
+                type: 1, // メンバー
+                allow: '1024', // メッセージ送信を許可
+              },
+            ],
+          }),
+        });
+
+        if (response.ok) {
+          const channel = await response.json();
+          console.log(`✅ Created channel: #${channel.name}`);
+
+          // --- 成功レスポンス ---
+          return res.send({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: `✅ チャンネル <#${channel.id}> を作成しました！`,
+            },
+          });
+        } else {
+          const errorText = await response.text();
+          console.error('❌ Failed to create channel:', errorText);
+          return res.send({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+              content: '❌ チャンネル作成に失敗しました。',
+            },
+          });
+        }
+      } catch (err) {
+        console.error('🔥 Error creating channel:', err);
+        return res.send({
+          type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+          data: {
+            content: '⚠️ 予期せぬエラーが発生しました。',
+          },
+        });
+      }
     }
 
-    // 🔸 未知のコマンド
-    console.log('❌ Unknown command:', name);
+    // 未知のコマンド
     return res.send({
       type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-      data: {
-        content: '未知のコマンドです',
-      },
+      data: { content: '❓ 未知のコマンドです。' },
     });
   }
 
-  // 🔸 その他のタイプ
-  console.log('❌ Unknown interaction type:', interaction.type);
+  // --- その他のタイプ ---
   return res.status(400).send({ error: 'Unknown interaction type' });
 });
 
-// === ヘルスチェック用 ===
-app.get('/', (req, res) => {
-  res.send('Discord Times Bot is running on Cloud Functions! 🚀');
-});
-
-// === Cloud Functions (Gen 2) 用のエクスポート ===
-// app.listen() は不要。Cloud Functions が自動でHTTPサーバーを起動します。
+/**
+ * ✅ Cloud Functions (Gen2) 注意点
+ * Functions Framework が自動的に listen() するので
+ * app.listen() は不要です（入れると EADDRINUSE が出ます）。
+ */
 export const discordBot = app;
