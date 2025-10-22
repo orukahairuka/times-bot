@@ -1,28 +1,22 @@
-// ロール→カテゴリ振り分け + リアクション発火 + 最小限コマンド
+// シンプル化されたDiscord Times Bot - リアクション発火 + 最小限コマンド
 import 'dotenv/config';
 import fs from 'node:fs/promises';
 import {
     Client,
     GatewayIntentBits,
-    PermissionsBitField,
     ChannelType,
     Partials,
 } from 'discord.js';
 
-/** ====== ここを必要に応じて ====== */
+/** ====== 基本設定 ====== */
 const PREFIX = '!'; // コマンドの接頭辞
-const DEFAULT_CATEGORY_NAME = 'times'; // デフォルトカテゴリ
+const DEFAULT_CATEGORY_NAME = 'times'; // すべてのtimesチャンネルはこのカテゴリに作成
 const CHANNEL_PREFIX = 'times-'; // 個人チャンネル名の接頭辞
-const PRIVATE_TO_MEMBER = true; // 個人チャンネルを本人だけ見える設定にする
-const CONFIG_PATH = './config.json'; // 設定保存先（Railwayだと再デプロイで消えることあり。永続化はDB推奨）
-/** ================================== */
+const CONFIG_PATH = './config.json'; // 設定保存先
+/** ====================== */
 
 // 初期設定（起動時に config.json があれば読み込む）
 let config = {
-    // ロールID → カテゴリ名のマップ
-    roleToCategory: {
-        // 例: "1418212853873119334": "27-times",
-    },
     // リアクショントリガー
     trigger: {
         messageId: '', // 特定メッセージに限定するならここ
@@ -60,8 +54,6 @@ const client = new Client({
     partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User],
 });
 
-const EVERYONE = (guild) => guild.roles.everyone.id;
-
 // チャンネル名サニタイズ
 function sanitizeForChannelName(name) {
     const ascii = name
@@ -74,34 +66,15 @@ function sanitizeForChannelName(name) {
     return ascii || 'user';
 }
 
-// ロール→カテゴリ決定（マッピング優先、無ければ “◯◯卒/年卒/期” 自動判定）
-function resolveCategoryNameFor(member) {
-    // 1) 明示マッピングを優先
-    for (const [roleId, category] of Object.entries(config.roleToCategory)) {
-        if (member.roles.cache.has(roleId)) return category;
-    }
-    // 2) ロール名から自動判定（例: 27卒 / 2027年卒 / 27期）
-    const yearPattern = /(?:20)?(\d{2})\s*(?:卒|年卒|期)/; // 27卒 / 2027年卒 / 27期 → "27"
-    for (const role of member.roles.cache.values()) {
-        const m = role.name.match(yearPattern);
-        if (m) {
-            const short = m[1]; // 末尾2桁
-            return `${short}-times`;
-        }
-    }
-    // 3) それでも決まらなければデフォルト
-    return DEFAULT_CATEGORY_NAME;
-}
-
-// 既存個人timesをカテゴリ内で探す
-function findExistingTimesChannel(guild, member, categoryName) {
+// 既存個人timesを探す（常に"times"カテゴリ内で検索）
+function findExistingTimesChannel(guild, member) {
     const base = sanitizeForChannelName(member.user.username);
     const expected = `${CHANNEL_PREFIX}${base}`;
     return guild.channels.cache.find(
         (c) =>
         c.type === ChannelType.GuildText &&
         c.name === expected &&
-        c.parent?.name === categoryName
+        c.parent?.name === DEFAULT_CATEGORY_NAME
     );
 }
 
@@ -120,53 +93,27 @@ async function ensureCategory(guild, categoryName) {
     return category;
 }
 
-// 個人times作成
+// 個人times作成（常に"times"カテゴリ、誰でも閲覧・投稿OK）
 async function createPersonalTimes(guild, member) {
-    const categoryName = resolveCategoryNameFor(member);
-    const category = await ensureCategory(guild, categoryName);
+    const category = await ensureCategory(guild, DEFAULT_CATEGORY_NAME);
 
     // 二重作成防止
-    const existing = findExistingTimesChannel(guild, member, categoryName);
+    const existing = findExistingTimesChannel(guild, member);
     if (existing) return existing;
 
     const base = sanitizeForChannelName(member.user.username);
     const name = `${CHANNEL_PREFIX}${base}`.slice(0, 90);
-    const everyoneId = EVERYONE(guild);
 
-    const permissionOverwrites = PRIVATE_TO_MEMBER ?
-        [
-            { id: everyoneId, deny: [PermissionsBitField.Flags.ViewChannel] },
-            {
-                id: member.id,
-                allow: [
-                    PermissionsBitField.Flags.ViewChannel,
-                    PermissionsBitField.Flags.SendMessages,
-                    PermissionsBitField.Flags.ReadMessageHistory,
-                ],
-            },
-            // Committeeロールに閲覧権限を追加
-            ...guild.roles.cache
-                .filter(role => role.name.toLowerCase().includes('committee'))
-                .map(role => ({
-                    id: role.id,
-                    allow: [
-                        PermissionsBitField.Flags.ViewChannel,
-                        PermissionsBitField.Flags.ReadMessageHistory,
-                    ],
-                })),
-        ] :
-        undefined;
-
+    // デフォルト権限で作成（permissionOverwritesなし = 誰でもアクセス可能）
     const channel = await guild.channels.create({
         name,
         type: ChannelType.GuildText,
         parent: category.id,
-        permissionOverwrites,
-        reason: `times作成 (${categoryName}): ${member.user.tag}`,
+        reason: `times作成: ${member.user.tag}`,
     });
 
     await channel.send(
-        `ようこそ <@${member.id}> さん！ここがあなたの **times** です（カテゴリ: **${categoryName}**）。\n` +
+        `ようこそ <@${member.id}> さん！ここがあなたの **times** です。\n` +
         `日報・メモ・進捗など自由にどうぞ。`
     );
 
@@ -201,22 +148,7 @@ client.on('messageReactionAdd', async(reaction, user) => {
     }
 });
 
-/* ===== コマンド ===== */
-
-function isAdminish(member) {
-    // 管理者権限チェック
-    if (member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-        member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-        return true;
-    }
-
-    // Committeeロールチェック
-    const hasCommitteeRole = member.roles.cache.some(role =>
-        role.name.toLowerCase().includes('committee')
-    );
-
-    return hasCommitteeRole;
-}
+/* ===== コマンド（committeeロール保持者のみ実行可能）===== */
 
 client.on('messageCreate', async(msg) => {
     try {
@@ -225,14 +157,15 @@ client.on('messageCreate', async(msg) => {
         if (!msg.content.startsWith(PREFIX)) return;
 
         const member = await msg.guild.members.fetch(msg.author.id);
-        if (!isAdminish(member)) {
-            return msg.reply('このコマンドは管理者またはCommitteeロールのみ使用できます。');
-        }
 
-        // コマンドメッセージを削除（権限があれば）
-        try {
-            await msg.delete();
-        } catch {}
+        // committeeロールチェック（ロール名に"committee"を含むか）
+        const hasCommitteeRole = member.roles.cache.some(role =>
+            role.name.toLowerCase().includes('committee')
+        );
+
+        if (!hasCommitteeRole) {
+            return msg.reply('このコマンドはCommitteeロール保持者のみ使用できます。');
+        }
 
         const [cmd, ...rest] = msg.content.slice(PREFIX.length).trim().split(/\s+/);
         const lower = cmd?.toLowerCase();
@@ -281,10 +214,9 @@ client.on('messageCreate', async(msg) => {
         // !status
         if (lower === 'status') {
             const lines = [
-                `Default Category: \`${DEFAULT_CATEGORY_NAME}\``,
-                `Private to member: \`${String(PRIVATE_TO_MEMBER)}\``,
+                `Category: \`${DEFAULT_CATEGORY_NAME}\`（すべてのtimesチャンネルをここに作成）`,
+                `権限: 誰でも閲覧・投稿OK`,
                 `Trigger: messageId=\`${config.trigger.messageId || '-'}\`, channelId=\`${config.trigger.channelId || '-'}\`, emoji=\`${config.trigger.emoji || '-'}\``,
-                `Mappings: ${Object.keys(config.roleToCategory).length} 件`,
             ];
             return msg.reply(lines.join('\n'));
         }
