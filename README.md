@@ -1,82 +1,166 @@
-# times-bot
+# Discord Times Bot - Cloud Functions (Gen 2) 版
 
-Discord用の個人timesチャンネル生成BOT（シンプル版）
+Cloud Functions (Gen 2) で動作する Discord Slash Command Bot です。
 
-## 機能
-- リアクションによるtimesチャンネル作成
-- 必要最小限のコマンド
-- ロールベースのカテゴリ振り分け
-- プライベートチャンネル設定対応（Committee ロールは閲覧可能）
+## 📋 前提条件
 
-## 管理者・Committee ロール専用コマンド
+- Node.js 20
+- Google Cloud プロジェクト
+- gcloud CLI がインストール済み
+- Discord アプリケーション（Discord Developer Portal で作成）
 
-以下のコマンドは、**管理者または Committee ロールを持つユーザーのみ使用可能**です。
+## 🚀 セットアップ手順
 
-| コマンド          | 説明                                     | 使用例                                         |
-|-------------------|------------------------------------------|------------------------------------------------|
-| `!make-times`     | timesチャンネルを作成（自分用/指定ユーザー用） | `!make-times` または `!make-times @user1 @user2` |
-| `!set-trigger`    | リアクションによるトリガーを設定         | `!set-trigger <メッセージID> ✅`               |
-| `!status`         | 現在の設定状態を表示                     | `!status`                                      |
+### 1. Discord アプリケーションの設定
 
-## セットアップ
+1. [Discord Developer Portal](https://discord.com/developers/applications) にアクセス
+2. 新しいアプリケーションを作成
+3. 以下の情報を取得：
+   - **Application ID** (General Information > Application ID)
+   - **Public Key** (General Information > Public Key)
+   - **Bot Token** (Bot > Token - "Reset Token" をクリック)
 
-### 1. `.env`ファイルを作成し、Discord BOTトークンを設定
+### 2. 環境変数の設定
+
+`.env` ファイルを作成：
+
+```bash
+cp .env.example .env
 ```
-DISCORD_TOKEN=your-bot-token-here
+
+`.env` ファイルに Discord の情報を記入：
+
+```env
+DISCORD_APPLICATION_ID=your_application_id_here
+DISCORD_PUBLIC_KEY=your_public_key_here
+DISCORD_TOKEN=your_bot_token_here
 ```
 
-### 2. 依存関係のインストール
+### 3. 依存関係のインストール
+
 ```bash
 npm install
 ```
 
-### 3. BOTの起動
+### 4. Cloud Functions へのデプロイ
+
+**重要**: デプロイ前に gcloud CLI でログインし、プロジェクトを設定してください。
+
 ```bash
-npm start
+# GCP プロジェクトを設定
+gcloud config set project YOUR_PROJECT_ID
+
+# Cloud Functions (Gen 2) にデプロイ
+gcloud functions deploy discordBot \
+  --gen2 \
+  --runtime=nodejs20 \
+  --region=asia-northeast1 \
+  --source=. \
+  --entry-point=discordBot \
+  --trigger-http \
+  --allow-unauthenticated \
+  --set-env-vars DISCORD_PUBLIC_KEY=your_public_key_here
 ```
 
-### 4. リアクショントリガーの設定
-1. 任意のチャンネルにメッセージを投稿
-2. メッセージIDをコピー（開発者モードで右クリック→IDをコピー）
-3. `!set-trigger <メッセージID> 🐈` でトリガー設定
-4. ユーザーがそのメッセージに絵文字リアクションするとtimesチャンネルが作成されます
+**環境変数の設定方法（推奨）**:
 
-## 設定
-
-### 基本設定（`index.js`内の定数）
-- `PREFIX`: コマンドの接頭辞（デフォルト: `!`）
-- `DEFAULT_CATEGORY_NAME`: デフォルトカテゴリ名（デフォルト: `times`）
-- `CHANNEL_PREFIX`: チャンネル名の接頭辞（デフォルト: `times-`）
-- `PRIVATE_TO_MEMBER`: プライベートチャンネル設定（デフォルト: `true`）
-
-### 動的設定（`config.json`）
-起動時に自動で `config.json` を読み込みます。存在しない場合はデフォルト設定で動作します。
-
-```json
-{
-  "roleToCategory": {
-    "ロールID": "カテゴリ名"
-  },
-  "trigger": {
-    "messageId": "メッセージID",
-    "channelId": "",
-    "emoji": "✅"
-  }
-}
+```bash
+# より安全な方法: Secret Manager を使用
+gcloud functions deploy discordBot \
+  --gen2 \
+  --runtime=nodejs20 \
+  --region=asia-northeast1 \
+  --source=. \
+  --entry-point=discordBot \
+  --trigger-http \
+  --allow-unauthenticated \
+  --set-secrets 'DISCORD_PUBLIC_KEY=discord-public-key:latest'
 ```
 
-### カテゴリ振り分けルール
-1. **明示的マッピング**: `config.json` の `roleToCategory` に設定されたロールIDとカテゴリ名のマッピング
-2. **自動判定**: ロール名に「27卒」「2027年卒」「27期」などが含まれる場合、自動的に `27-times` カテゴリに振り分け
-3. **デフォルト**: 上記に該当しない場合は `DEFAULT_CATEGORY_NAME` カテゴリに作成
+### 5. Interactions Endpoint URL の設定
 
-## 権限設定
+デプロイが完了したら、Functions の URL が表示されます：
 
-### Committeeロール
-- 名前に "committee" が含まれるロールは、全てのプライベートtimesチャンネルを閲覧可能（書き込み不可）
+```
+https://asia-northeast1-YOUR_PROJECT_ID.cloudfunctions.net/discordBot
+```
 
-### Discord Developer Portal で必要な設定
-1. **Bot Intents** で以下を有効化:
-   - `PRESENCE INTENT`
-   - `SERVER MEMBERS INTENT`
-   - `MESSAGE CONTENT INTENT`
+この URL を Discord Developer Portal に登録：
+
+1. Discord Developer Portal > 該当アプリケーション > General Information
+2. **INTERACTIONS ENDPOINT URL** に上記 URL を入力
+3. "Save Changes" をクリック
+
+Discord が自動的に PING テストを実行します。✅ が表示されれば成功です！
+
+### 6. スラッシュコマンドの登録
+
+```bash
+npm run register
+```
+
+成功すると以下のように表示されます：
+
+```
+✅ コマンド登録成功
+登録されたコマンド:
+  /make-times - timesチャンネルを作成します
+```
+
+## 🎮 使い方
+
+Discord サーバーで `/make-times` と入力すると：
+
+```
+✅ timesコマンドを受信しました！
+```
+
+と返信されます。
+
+## 📝 ファイル構成
+
+```
+times-bot/
+├── index.js                # Cloud Functions のメインファイル
+├── register-commands.js    # スラッシュコマンド登録スクリプト
+├── package.json           # 依存関係とスクリプト
+├── .env                   # 環境変数（非公開）
+├── .env.example           # 環境変数のテンプレート
+└── README.md             # このファイル
+```
+
+## 🔧 トラブルシューティング
+
+### "Function 'helloHttp' not defined" エラーが出る場合
+
+`--entry-point=discordBot` を指定してください。これは `index.js` でエクスポートしている関数名と一致させる必要があります。
+
+### "container failed to start" エラーが出る場合
+
+1. `package.json` で `"type": "module"` が設定されているか確認
+2. `--runtime=nodejs20` が指定されているか確認
+3. `DISCORD_PUBLIC_KEY` 環境変数が正しく設定されているか確認
+
+### PING テストが失敗する場合
+
+1. `--allow-unauthenticated` が設定されているか確認（Discord からのリクエストを受け付けるため）
+2. Cloud Functions のログを確認：`gcloud functions logs read discordBot --region=asia-northeast1`
+
+## 🔍 ログの確認
+
+```bash
+# リアルタイムでログを表示
+gcloud functions logs read discordBot \
+  --region=asia-northeast1 \
+  --limit=50
+
+# ログをフォロー
+gcloud functions logs tail discordBot \
+  --region=asia-northeast1
+```
+
+## 📚 参考資料
+
+- [Discord Interactions API](https://discord.com/developers/docs/interactions/receiving-and-responding)
+- [Google Cloud Functions (Gen 2)](https://cloud.google.com/functions/docs/2nd-gen/overview)
+- [discord-interactions npm package](https://www.npmjs.com/package/discord-interactions)

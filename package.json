@@ -1,18 +1,19 @@
 {
-    "name": "times-bot",
-    "version": "1.0.0",
-    "description": "",
-    "main": "index.js",
-    "type": "module",
-    "scripts": {
-        "start": "node index.js",
-        "test": "echo \"Error: no test specified\" && exit 1"
-    },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
-    "dependencies": {
-        "discord.js": "^14.22.1",
-        "dotenv": "^17.2.2"
-    }
+  "name": "times-bot",
+  "version": "1.0.0",
+  "description": "Discord Slash Command Bot for Cloud Functions (Gen 2)",
+  "main": "index.js",
+  "type": "module",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "register": "node register-commands.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "discord-interactions": "^4.0.0",
+    "dotenv": "^17.2.2"
+  }
 }
