@@ -244,10 +244,36 @@ client.on('messageCreate', async(msg) => {
 
         // !status
         if (lower === 'status') {
+            const guild = msg.guild;
+            const timesChannels = guild.channels.cache.filter(c =>
+                c.type === ChannelType.GuildText &&
+                c.name.startsWith(CHANNEL_PREFIX) &&
+                c.parent?.name === DEFAULT_CATEGORY_NAME
+            );
+
             const lines = [
-                `Category: \`${DEFAULT_CATEGORY_NAME}\`（すべてのtimesチャンネルをここに作成）`,
-                `権限: 誰でも閲覧・投稿OK`,
-                `Trigger: messageId=\`${config.trigger.messageId || '-'}\`, channelId=\`${config.trigger.channelId || '-'}\`, emoji=\`${config.trigger.emoji || '-'}\``,
+                `**📊 Times Bot ステータス**`,
+                ``,
+                `**基本設定:**`,
+                `・カテゴリ: \`${DEFAULT_CATEGORY_NAME}\``,
+                `・チャンネル接頭辞: \`${CHANNEL_PREFIX}\``,
+                `・権限: 誰でも閲覧・投稿OK`,
+                ``,
+                `**トリガー設定:**`,
+                `・メッセージID: \`${config.trigger.messageId || '未設定'}\``,
+                `・絵文字: ${config.trigger.emoji || '未設定'}`,
+                ``,
+                `**ウェルカムメッセージ:**`,
+                `\`\`\``,
+                config.welcomeMessage || 'デフォルト',
+                `\`\`\``,
+                ``,
+                `**作成済みtimesチャンネル数:** ${timesChannels.size}件`,
+                ``,
+                `**利用可能なコマンド:**`,
+                `・\`!make-times\` - timesチャンネル作成`,
+                `・\`!set-trigger <ID> <絵文字>\` - リアクショントリガー設定`,
+                `・\`!status\` - この情報を表示`,
             ];
             return msg.reply(lines.join('\n'));
         }
