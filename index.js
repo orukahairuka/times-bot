@@ -6,6 +6,7 @@ import {
     GatewayIntentBits,
     ChannelType,
     Partials,
+    PermissionsBitField,
 } from 'discord.js';
 
 /** ====== 基本設定 ====== */
@@ -158,13 +159,14 @@ client.on('messageCreate', async(msg) => {
 
         const member = await msg.guild.members.fetch(msg.author.id);
 
-        // committeeロールチェック（ロール名に"committee"を含むか）
+        // 管理者権限またはcommitteeロールチェック
+        const isAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
         const hasCommitteeRole = member.roles.cache.some(role =>
             role.name.toLowerCase().includes('committee')
         );
 
-        if (!hasCommitteeRole) {
-            return msg.reply('このコマンドはCommitteeロール保持者のみ使用できます。');
+        if (!isAdmin && !hasCommitteeRole) {
+            return msg.reply('このコマンドは管理者またはCommitteeロール保持者のみ使用できます。');
         }
 
         const [cmd, ...rest] = msg.content.slice(PREFIX.length).trim().split(/\s+/);
