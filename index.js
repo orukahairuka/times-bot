@@ -24,6 +24,8 @@ let config = {
         channelId: '', // チャンネル全体で許可したいならここ
         emoji: '✅',
     },
+    // ウェルカムメッセージ（{user}がユーザーメンションに置換される）
+    welcomeMessage: 'ようこそ {user} さん！ここがあなたの **times** です。\n日報・メモ・進捗など自由にどうぞ。',
 };
 
 async function loadConfig() {
@@ -113,10 +115,10 @@ async function createPersonalTimes(guild, member) {
         reason: `times作成: ${member.user.tag}`,
     });
 
-    await channel.send(
-        `ようこそ <@${member.id}> さん！ここがあなたの **times** です。\n` +
-        `日報・メモ・進捗など自由にどうぞ。`
-    );
+    // ウェルカムメッセージをカスタマイズ可能に
+    const welcomeText = (config.welcomeMessage || 'ようこそ {user} さん！ここがあなたの **times** です。\n日報・メモ・進捗など自由にどうぞ。')
+        .replace('{user}', `<@${member.id}>`);
+    await channel.send(welcomeText);
 
     return channel;
 }
@@ -231,10 +233,12 @@ client.on('messageCreate', async(msg) => {
         if (lower === 'set-trigger') {
             const messageId = rest[0];
             const emoji = rest[1] || '✅';
+            console.log('🔧 set-trigger params:', { messageId, emoji });
             if (!messageId) return msg.reply('使い方: `!set-trigger メッセージID ✅`');
             config.trigger.messageId = messageId;
             config.trigger.emoji = emoji;
             await saveConfig();
+            console.log('✅ trigger saved to config');
             return msg.reply(`トリガー設定: messageId=${messageId}, emoji=${emoji}`);
         }
 
